@@ -10,8 +10,6 @@ function calc_p_q(dfdx::Vector, x0::Vector)
     end
     return p, q
 end
-pi(dfdxi, x0::Vector) =  maximum([dfdxi(x0), 0])
-qi(dfdxi, x0::Vector, xi) =  maximum([-dfdxi(x0)*xi^2, 0])
 
 function A_(p_f, p_g)
     A = []
@@ -20,7 +18,6 @@ function A_(p_f, p_g)
     end
     return A
 end
-Ai(p_fi, p_gi) = λ -> p_fi+λ*p_gi
 
 function B_(q_f, q_g)
     B = []
@@ -29,7 +26,6 @@ function B_(q_f, q_g)
     end
     return B
 end
-Bi(q_fi, q_gi) = λ -> q_fi+λ*q_gi
 
 function dLdx(A, B)
     res = []
@@ -38,7 +34,6 @@ function dLdx(A, B)
     end
     return res
 end
-dLdxi(A,B) = (x, λ) -> A(λ)-B(λ)/x^2
 
 function x_opt(λ, A, B, x_range, DLdx)
     x = []
@@ -56,27 +51,12 @@ function x_opt(λ, A, B, x_range, DLdx)
     end
     return x
 end
-function xi_opt(λ, Ai, Bi, xi_range, DLdxi)
-    alpha = xi_range[1]
-    beta  = xi_range[2]
-    if DLdxi(beta, λ) <= 0
-        xi = beta
-    elseif DLdxi(alpha, λ) >= 0
-        xi = alpha
-    else
-        sqrt(Bi(λ)/Ai(λ))
-    end
-end
 
 function conlin_approximate(f, dfdx::Vector, x0)
-    p = []
-    q = []
-    for i in 1:2
-        push!(p, maximum([dfdx[i](x0), 0]))
-        push!(q, maximum([-dfdx[i](x0)*x0[i]^2, 0]))
-    end
+    p, q = calc_p_q(dfdx, x0)
+
     c = f(x0)
-    for i in 1:2
+    for i in eachindex(x0)
         c -= p[i]*x0[i] + q[i]/x0[i]
     end
     function fc(x)
@@ -113,7 +93,7 @@ function conlin_iter(
     dldx = dLdx(A, B)
 
     # Функция x(λ)
-    x = λ -> x_opt(λ, A, B, x_range,dldx)
+    x(λ) = x_opt(λ, A, B, x_range,dldx)
     # Функция ϕ(λ)
     ϕ(λ) = Vc(x(λ)) + λ*gc(x(λ))
 
@@ -164,8 +144,6 @@ x1_range=[0.2,2.5]
 x2_range=[0.2,2.5]
 x_range = [x1_range, x2_range]
 x0=[0.5,2.4]
-alpha=0.2
-beta=2.5
 
 conlin(
     V,
