@@ -1,28 +1,10 @@
 using Plots
 using Optim
 
-# Целевая функция
-V(x)= x[1] + x[2]
-dVdx1(x) = 1
-dVdx2(x) = 1
-dVdx = [dVdx1, dVdx2]
-
-# Функция ограничений
-g(x) = 8/(16*x[1] + 9*x[2]) - 4.5/(9*x[1] + 16*x[2]) - 0.1
-dgdx1(x) = -128/(16*x[1]+9*x[2])^2+40.5/(9*x[1]+16*x[2])^2
-dgdx2(x) = -72/(16*x[1]+9*x[2])^2+72/(9*x[1]+16*x[2])^2
-dgdx = [dgdx1, dgdx2]
-
-x1_range=[0.2,2.5]
-x2_range=[0.2,2.5]
-x0=[2,1]
-alpha=0.2
-beta=2.5
-
-function calc_p_q(f, dfdx::Vector, x0::Vector)
+function calc_p_q(dfdx::Vector, x0::Vector)
     p = []
     q = []
-    for i in 1:length(dfdx)
+    for i in eachindex(dfdx)
         push!(p, maximum([dfdx[i](x0), 0]))
         push!(q, maximum([-dfdx[i](x0)*x0[i]^2, 0]))
     end
@@ -31,49 +13,58 @@ end
 pi(dfdxi, x0::Vector) =  maximum([dfdxi(x0), 0])
 qi(dfdxi, x0::Vector, xi) =  maximum([-dfdxi(x0)*xi^2, 0])
 
-function create_A(p_f, p_g)
+function A_(p_f, p_g)
     A = []
-    for i in 1:length(p_f)
-        push!(A, lam -> p_f[i]+lam*p_g[i])
+    for i in eachindex(p_f)
+        push!(A, λ -> p_f[i]+λ*p_g[i])
     end
     return A
 end
-Ai(p_fi, p_gi) = lam -> p_fi+lam*p_gi
+Ai(p_fi, p_gi) = λ -> p_fi+λ*p_gi
 
-function create_B(q_f, q_g)
+function B_(q_f, q_g)
     B = []
-    for i in 1:length(q_f)
-        push!(B, lam -> q_f[i]+lam*q_g[i])
+    for i in eachindex(q_f)
+        push!(B, λ -> q_f[i]+λ*q_g[i])
     end
     return B
 end
-Bi(q_fi, q_gi) = lam -> q_fi+lam*q_gi
+Bi(q_fi, q_gi) = λ -> q_fi+λ*q_gi
 
 function dLdx(A, B)
     res = []
-    for i in 1:length(A)
-        push!(res, (x, lam) -> A[i](lam)-B[i](lam)/x^2)
+    for i in eachindex(A)
+        push!(res, (x, λ) -> A[i](λ)-B[i](λ)/x^2)
     end
     return res
 end
-dLdxi(A,B) = (x, lam) -> A(lam)-B(lam)/x^2
+dLdxi(A,B) = (x, λ) -> A(λ)-B(λ)/x^2
 
-function x_opt(lam, A, B, x1_range, x2_range)
+function x_opt(λ, A, B, x_range, DLdx)
     x = []
-    gradL = dLdx(A,b)
-    for i in 1:length(A)
-        push!(x, lam -> sqrt(A[i](lam)/B[i](lam)))
+    for i in eachindex(DLdx)
+        alpha = x_range[i][1]
+        beta = x_range[i][2]
+        if DLdx[i](beta, λ) <= 0
+            xi = beta
+        elseif DLdx[i](alpha, λ) >= 0
+            xi = alpha
+        else
+            xi = sqrt(B[i](λ)/A[i](λ))
+        end
+        push!(x, xi)
     end
     return x
 end
-
-function xi_opt(lam, Ai, Bi, alpha, beta, DLdxi)
-    if DLdxi(beta, lam) <= 0
+function xi_opt(λ, Ai, Bi, xi_range, DLdxi)
+    alpha = xi_range[1]
+    beta  = xi_range[2]
+    if DLdxi(beta, λ) <= 0
         xi = beta
-    elseif DLdxi(alpha, lam) >= 0
+    elseif DLdxi(alpha, λ) >= 0
         xi = alpha
     else
-        sqrt(Bi(lam)/Ai(lam))
+        sqrt(Bi(λ)/Ai(λ))
     end
 end
 
@@ -90,7 +81,7 @@ function conlin_approximate(f, dfdx::Vector, x0)
     end
     function fc(x)
         res = c
-        for i in 1:2
+        for i in eachindex(x)
             res += p[i]*x[i] + q[i]/x[i]
         end
         return res
@@ -104,47 +95,39 @@ function conlin_iter(
     g,
     dgdx,
     x0,
-    alpha,
-    beta
+    x_range,
 )
     # CONLIN-аппроксимация целевой функции и функции ограничений
     gc = conlin_approximate(g, dgdx, x0)
     Vc = conlin_approximate(V, dVdx, x0)
 
     # pi, pji, qi, qji
-    p_v1=pi(dVdx1,x0)
-    p_v2=pi(dVdx2,x0)
-    q_v1=qi(dVdx1,x0,x0[1])
-    q_v2=qi(dVdx2,x0,x0[2])
-
-    p_g1=pi(dgdx1,x0)
-    p_g2=pi(dgdx2,x0)
-    q_g1=qi(dgdx1,x0,x0[1])
-    q_g2=qi(dgdx2,x0,x0[2])
+    p_v, q_v = calc_p_q(dVdx, x0)
+    p_g, q_g = calc_p_q(dgdx, x0)
 
     # Ai, Bi
-    A1=Ai(p_v1, p_g1)
-    A2=Ai(p_v2, p_g2)
-    B1=Bi(q_v1, q_g1)
-    B2=Bi(q_v2, q_g2)
+    A = A_(p_v, p_g)
+    B = B_(q_v, q_g)
 
     # Градиент Лагранжиана
-    dldx1 = dLdxi(A1,B1)
-    dldx2 = dLdxi(A2,B2)
+    dldx = dLdx(A, B)
 
-    # Функция phi(lambda)
-    phi(lam) = Vc([xi_opt(lam,A1,B1,alpha,beta,dldx1), xi_opt(lam,A2,B2,alpha,beta,dldx2)])+lam*gc([xi_opt(lam,A1,B1,alpha,beta,dldx1),xi_opt(lam,A2,B2,alpha,beta,dldx2)])
-    lambda_vector=range(0, stop=30,length=100)
-    phi_vector=[phi(lam) for lam in lambda_vector]
+    # Функция x(λ)
+    x = λ -> x_opt(λ, A, B, x_range,dldx)
+    # Функция ϕ(λ)
+    ϕ(λ) = Vc(x(λ)) + λ*gc(x(λ))
 
-    # Функция -phi (метод золотого сечения ищет только минимум, нужен максимум)
-    phi_(lam) = -(Vc([xi_opt(lam,A1,B1,alpha,beta,dldx1), xi_opt(lam,A2,B2,alpha,beta,dldx2)])+lam*gc([xi_opt(lam,A1,B1,alpha,beta,dldx1),xi_opt(lam,A2,B2,alpha,beta,dldx2)]))
-    lambda_opt_iter = optimize(phi_, 0.0, 100.0, GoldenSection())
+    # Для построения графика 
+    # λ_vector=range(0, stop=30,length=100)
+    # ϕ_vector=[ϕ(λ) for λ in λ_vector]
+    
+    # Функция -ϕ (метод золотого сечения ищет только минимум, нужен максимум)
+    ϕ_(λ) = -(Vc(x(λ)) + λ*gc(x(λ)))
+    λ_opt_iter = optimize(ϕ_, 0.0, 100.0, GoldenSection())
 
     # Проектные переменные
-    x1_iter = xi_opt(lambda_opt_iter.minimizer,A1,B1,alpha,beta,dldx1)
-    x2_iter = xi_opt(lambda_opt_iter.minimizer,A2,B2,alpha,beta,dldx2)
-    return [x1_iter, x2_iter]
+    x_new = x(λ_opt_iter.minimizer)
+    return x_new
 end
 
 norm(vector) = sqrt(sum(vector.^2))
@@ -154,19 +137,35 @@ function conlin(
     g,
     dgdx,
     x0,
-    alpha,
-    beta    
+    x_range,    
 )
-    x = conlin_iter(V, dVdx, g, dgdx, x0,alpha, beta)
+    x = conlin_iter(V, dVdx, g, dgdx, x0, x_range)
     i = 1
     while norm(abs.(x-x0))>=0.01 && i < 100
         println("x=$x")
         x0 = x
-        x = conlin_iter(V, dVdx, g, dgdx, x,alpha, beta)
+        x = conlin_iter(V, dVdx, g, dgdx, x, x_range)
     end
 end
 
+# Целевая функция
+V(x)= x[1] + x[2]
+dVdx1(x) = 1
+dVdx2(x) = 1
+dVdx = [dVdx1, dVdx2]
 
+# Функция ограничений
+g(x) = 8/(16*x[1] + 9*x[2]) - 4.5/(9*x[1] + 16*x[2]) - 0.1
+dgdx1(x) = -128/(16*x[1]+9*x[2])^2+40.5/(9*x[1]+16*x[2])^2
+dgdx2(x) = -72/(16*x[1]+9*x[2])^2+72/(9*x[1]+16*x[2])^2
+dgdx = [dgdx1, dgdx2]
+
+x1_range=[0.2,2.5]
+x2_range=[0.2,2.5]
+x_range = [x1_range, x2_range]
+x0=[0.5,2.4]
+alpha=0.2
+beta=2.5
 
 conlin(
     V,
@@ -174,6 +173,5 @@ conlin(
     g,
     dgdx,
     x0,
-    alpha,
-    beta    
+    x_range    
 )
