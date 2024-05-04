@@ -35,11 +35,12 @@ function dLdx(A, B)
     return res
 end
 
-function x_opt(λ, A, B, x_range, DLdx)
+function x_opt(λ, A, B, x_range, x0, DLdx)
+    nu=0.5
     x = []
     for i in eachindex(DLdx)
-        alpha = x_range[i][1]
-        beta = x_range[i][2]
+        alpha = maximum([x_range[i][1], x0[i]-nu*(x_range[i][2]- x_range[i][1])])
+        beta = minimum([x_range[i][2], x0[i]+nu*(x_range[i][2]- x_range[i][1])])
         if DLdx[i](beta, λ) <= 0
             xi = beta
         elseif DLdx[i](alpha, λ) >= 0
@@ -93,7 +94,7 @@ function conlin_iter(
     dldx = dLdx(A, B)
 
     # Функция x(λ)
-    x(λ) = x_opt(λ, A, B, x_range,dldx)
+    x(λ) = x_opt(λ, A, B, x_range, x0, dldx)
     # Функция ϕ(λ)
     ϕ(λ) = Vc(x(λ)) + λ*gc(x(λ))
 
